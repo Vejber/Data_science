@@ -1,0 +1,61 @@
+---
+title: "Script1Report"
+author: "Вейбер Е.Н. 23.М08-мм"
+output: html_document
+date: "2024-02-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Введение
+
+В этом отчете представлен анализ зарплат преподавателей в различных учебных заведениях с разделением по половому признаку.
+
+## Загрузка данных
+
+Данные о зарплатах были загружены и проверены с помощью следующего кода:
+
+```{r load-data, echo=TRUE}
+library(tidyverse)
+
+school_earnings <- read.csv("~/Downloads/school_earnings.csv")
+head(school_earnings)
+```
+## Описательная статистика
+Следующий код был использован для получения описательной статистики:
+```{r}
+summary(school_earnings)
+
+school_earnings %>%
+  summarise(
+    Mean_Women = mean(Women, na.rm = TRUE),
+    Median_Women = median(Women, na.rm = TRUE),
+    Min_Women = min(Women, na.rm = TRUE),
+    Max_Women = max(Women, na.rm = TRUE),
+    Mean_Men = mean(Men, na.rm = TRUE),
+    Median_Men = median(Men, na.rm = TRUE),
+    Min_Men = min(Men, na.rm = TRUE),
+    Max_Men = max(Men, na.rm = TRUE)
+  )
+
+```
+
+## Визуализация данных
+Для визуализации распределения зарплат был использован boxplot. Данные были преобразованы в длинный формат для группировки по полу:
+
+```{r}
+long_data <- school_earnings %>%
+  pivot_longer(cols = Women:Men, names_to = "Gender", values_to = "Salary")
+
+ggplot(long_data, aes(x = Gender, y = Salary, fill = Gender)) +
+  geom_boxplot() +
+  labs(title = "Распределение зарплат между мужчинами и женщинами", 
+       x = "", y = "Зарплата") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal(base_size = 16)
+```
+
+## Результат
+Результатом проведенного анализа является график, отображающий распределение зарплат по полу.
