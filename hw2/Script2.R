@@ -100,3 +100,18 @@ cor_matrix <- cor(data[,c('age', 'bmi', 'charges')])
 # Визуализация корреляционной матрицы
 corrplot::corrplot(cor_matrix, method = "circle")
 print(cor_matrix)
+
+# Статистический вывод между age и bmi
+cor_test_age_bmi <- cor.test(data$age, data$bmi)
+print("Корреляция между возрастом и BMI:")
+print(cor_test_age_bmi)
+
+# Статистический вывод между age и charges
+cor_test_age_charges <- cor.test(data$age, data$charges)
+print("Корреляция между возрастом и медицинскими расходами:")
+print(cor_test_age_charges)
+
+# Статистический вывод между bmi и charges
+cor_test_bmi_charges <- cor.test(data$bmi, data$charges)
+print("Корреляция между BMI и медицинскими расходами:")
+print(cor_test_bmi_charges)
