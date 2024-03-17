@@ -1,0 +1,227 @@
+---
+title: "Пример анализа данных"
+output: html_document
+author: Столярова Валерия Фуатовна
+---
+
+```{r echo=FALSE, message=FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+winequality <- read.csv("http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv", sep=";")
+
+winequality <- winequality  %>% mutate(quality = as.character(quality))
+```
+
+**Исследовательский вопрос:** какие физико--химические свойства могут служить предикторами качества вина?
+
+**Набор данных: ** чтобы ответить на исследовательский вопрос были проанализированы 4898 экземпляров белого вина, определены их физико--химические свойства. Качество вина определялось экспертным методом, каждый из по крайней мере трех экспертов оценивал вино по шкале от 0 до 10. В качестве финальной оценки представлена медиана оценок экспертов.
+
+Были измерены следующие физико--химические свойства:
+
+   1. fixed acidity --- содержание нелетучих кислот
+   2. volatile acidity --- содержание летучих кислот
+   3. citric acid --- содержание аскорбиновой кислоты
+   4. residual sugar --- содержание остаточных сахаров
+   5. chlorides --- содержание хлоридов
+   6. free sulfur dioxide --- содержание свобоного диоксида серы
+   7. total sulfur dioxide --- общее содержание диоксида серы
+   8. density --- плотность
+   9. pH --- кислотность
+   10. sulphates --- содержание сульфатов
+   11. alcohol --- крепость
+
+
+## Кластеризация k--средних
+
+Этот подход требует предварительного определения оптимального числа кластеров. При проведении анализа необходимо обращать внимание на параметр *distance*, которые зависит от того, как измерены переменные. 
+```{r}
+library(NbClust) #много индексов для определения оптимального числа кластеров
+library(fpc) #много различных методов кластеризации
+library(factoextra) #визуализация кластерного анализа
+
+#может определять количество кластеров для классических методов кластеризации, работает медленно
+#cl_res <- NbClust(winequality[sample(1:4898, 500),1:11], distance="euclidean", method="kmeans")
+#print(cl_res)
+```
+
+Однако данные представлены в различных шкалах, поэтому иногда важно их стандартизовать, однако при этом можно потерять кластеры. Для 
+
+```{r}
+winequality_mod <- as.data.frame(scale(winequality[,1:11]))
+
+#were useful function to check out a lot of indices
+#cl_res_std <- NbClust(winequality_mod[sample(1:4898, 500),], distance="euclidean", method="kmeans")
+```
+
+Классические графические подходы к определению оптимального количества кластеров
+
+```{r}
+fviz_nbclust(winequality_mod, FUNcluster = kmeans, method="wss")
+```
+
+```{r}
+fviz_nbclust(winequality_mod, FUNcluster = kmeans, method="silhouette")
+```
+
+При проведении кластерного анализа порой важно снижать размерность данных. Например, можно проанализировать корреляции? сильно коррелированные переменные можно исключить из анализа, при этом степень сильнокоррелированности определяется исследователем.
+
+```{r}
+library(ggcorrplot)
+
+corr_scaled <- round(cor(winequality_mod[1:11]),1)
+
+ggcorrplot(corr_scaled, hc.order = TRUE, 
+           type = "lower", 
+           lab = TRUE, 
+           lab_size = 3, 
+           method="circle", 
+           colors = c("tomato2", "white", "springgreen3"), 
+           title="Correlogram of Wine Data", 
+           ggtheme=theme_bw)
+
+# или corrplot::corrplot(cor(winequality_mod, method="pearson"))
+```
+
+В имеющемся датасете присутствуют коррелированные признаки, определим те, которые наиболее коррелированы с остальными.
+
+```{r}
+a<-caret::findCorrelation(corr_scaled, cutoff = 0.59, verbose = T)
+
+print("---Column name we want to remove---")
+colnames(winequality_mod)[a]
+
+winequality_mod <- as.data.frame(winequality_mod) %>% select(-density, -total.sulfur.dioxide)
+```
+
+Признаки "density" и "total.sulfur.dioxide" коррелированы с остальными признаками, удалим их из таблицы данных.
+
+```{r}
+fviz_nbclust(winequality_mod, kmeans, method="wss")
+fviz_nbclust(winequality_mod, kmeans, method="silhouette")
+```
+
+После удаления двух переменных графики средней ширины силуэтов и WSS позволяют предположить наличие 3 или 4 кластеров в датасете.
+
+```{r}
+clus_res <- kmeans(winequality_mod, 3)
+fviz_cluster(clus_res, winequality_mod, stand = FALSE,  geom = "point", ggtheme = theme_bw())
+```
+
+### Устойчивость кластеров
+
+Оптимальное число кластеров можно опредилить при помощи анализа устойчивости кластеров (на основе формирования подвыборок из исходной выборки).
+
+```{r }
+clboo_res <- fpc::clusterboot(winequality_mod,B=100,bootmethod=c("boot"),clustermethod=kmeansCBI,k=3)
+
+#clboo_res <- fpc::clusterboot(winequality_mod,B=100,bootmethod=c("boot"),clustermethod=kmeansCBI,k=4)
+
+clboo_res
+```
+Три кластера устойчивы, в то время как четыре --- нет.
+
+### Коммуникация результатов кластерного анализа
+
+Представление результатов кластерного анализа основанона графическом и численном сравнении признаков между кластерами.
+
+```{r}
+winequality_mcl <- winequality %>% mutate(cluster = as.factor(clus_res$cluster))
+
+#summary(winequality_mcl %>% filter(cluster==1))
+#summary(winequality_mcl %>% filter(cluster==1))
+
+summary_tab <- winequality_mcl %>% group_by(cluster) %>% summarise( mean_fixedacidity=mean(fixed.acidity),
+mean_volatileacidity=mean(volatile.acidity),
+mean_citricacid=mean(citric.acid),
+mean_residualsugar=mean(residual.sugar),
+mean_chlorides=mean(chlorides),
+mean_freesulphurdioxide=mean(free.sulfur.dioxide),
+mean_totalsulphurdioxide=mean(total.sulfur.dioxide),
+mean_density=mean(density),
+mean_ph=mean(pH),
+mean_sulphates=mean(sulphates),
+mean_alcohol=mean(alcohol) )
+
+print(summary_tab, width = Inf)
+```
+Графический анализ позволяет представить численные результаты. Представление нескольких признаков возможно, если они измерены в одной шкале.
+
+```{r}
+winequality_mcl %>% select(density, volatile.acidity, citric.acid, sulphates, cluster) %>% pivot_longer(1:4, names_to = "feature", values_to = "vals") %>%
+  ggplot(aes(x=feature, y=vals, fill = as.factor(cluster))) + geom_boxplot()
+```
+
+```{r}
+winequality_mcl %>% select(fixed.acidity, pH, alcohol, residual.sugar, cluster) %>% pivot_longer(1:3, names_to = "feature", values_to = "vals") %>%
+  ggplot(aes(x=feature, y=vals, fill = as.factor(cluster))) + geom_boxplot()
+```
+
+При сравнении групп между собой можно использовать статистический вывод который позволит перейти от исключительно основанного-на-данных кластерного анализа к выводам о генеральной совокупности при проведении выборочного исследования.
+
+Для попарного сравнения кластеров между собой можно использовать t--критерий, для сравнения нескольких групп по уровню выраженности непрерывного признака можно использовать попарные сравнения (обычно после анализа ANOVA, который позволяет определить есть вообще различия между несколькими группами). 
+
+```{r}
+summary(aov(winequality_mcl$volatile.acidity ~ winequality_mcl$cluster))
+```
+
+**Нулевая гипотеза:** средние значения признака volatile.acidity одинаковы между кластерами
+
+Полученное p--значение выше уровня значимости, и значит гипотеза о  равенстве средних значений признака volatile.acidity между кластерами не отвергается.
+
+Для всех остальных признаков p--значение ниже выбранного уровня значимости, таким образом, хотя бы каие-то кластеры различаются по уровню выраженности признака. Чтобы определить, какие группы отличаются, проводится post-hoc попарные тесты (попарный t--критерий, критерий Tukey). Такие тест используют специальные поправки на множественные тесты, которые проводятся на одном датасете.
+
+```{r}
+ggplot(winequality_mcl, aes(y=alcohol, fill = as.factor(cluster))) + geom_boxplot()
+
+pairwise.t.test(winequality_mcl$alcohol, winequality_mcl$cluster)
+```
+**Нулевая гипотеза**: среднее значение алкоголя равно в выявленных кластерах.
+
+p--значение ниже выбранного уровня значимости при сравнении всех трех групп между собой, и потому гипотеза о равенстве средних в двух кластерах отклоняется. В кластере 1 содержатся самые крепкие вина, в кластере 3 содержатся самые некрепкие вина.
+
+```{r}
+ggplot(winequality_mcl, aes(y=residual.sugar, fill = as.factor(cluster))) + geom_boxplot()
+
+pairwise.t.test(winequality_mcl$residual.sugar, winequality_mcl$cluster)
+```
+
+**Нулевая гипотеза**: среднее значение остаточного сахара равно в выявленных кластерах.
+
+p--значение ниже выбранного уровня значимости для всех трех кластеров, и потому гипотеза о равенстве средних в выявленных трех кластерах отклоняется. В кластере 3 содержатся значительно более сладкие вина.
+
+**Описание кластеров**:
+
+1. К первому кластеру относятся вина с повышенным содержанием нелетучих кислот (fixed.acidity), пониженным содержанием диоксида серы (free.sulphur.dioxide и total.sulphur.dioxide) и сульфатов (sulphates).
+2. Ко второму кластеру относятся вина с пониженным содержанием нелетучих кислот (fixed.acidity), остаточных сахаров (residual.sugar) и повышенным содержанием сульфатов (sulphates). Плотность сопоставима с винами из первого кластера и ниже, чем у вин из третьего кластера. Вина из этого кластера обладают самой низкой кислотностью (высокий показатель pH).
+3. К третьему кластеру относятся вина с высоким содержанием аскорбиновой кислоты (citric.acid), остаточного сахара (residual.sugar), хлоридов (chlorides), диоксида серы (sulphur.dioxide). Вина из этого кластера наименее крепкие (alcohol), крепость вин из первого и второго кластеров сопоставима.
+
+## Кластеризация DBSCAN
+
+(для иллюстрации; можно раскомментировать, чтобы использовать код)
+
+```{r}
+library(dbscan)
+
+#wq_data <- as.matrix(winequality_mod[, 1:11])
+
+#dbscan::kNNdistplot(wq_data, k =  4)
+#abline(h = 0.4, lty = 2)
+
+#set.seed(123)
+# fpc package
+#res.fpc <- fpc::dbscan(wq_data, eps = 3, MinPts = 4)
+# dbscan package
+#res.db <- dbscan::dbscan(wq_data, 3, 4)
+
+#all(res.fpc$cluster == res.db$cluster)
+
+#fviz_cluster(res.fpc, iris, geom = "point")
+```
+
+
+Для построение модели машинного обучения можно разбивать на тестовую и тренировочную выборки и предсказывать кластер по поступающим данным.
