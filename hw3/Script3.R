@@ -115,6 +115,8 @@ cluster_means <- scaled_data %>%
 # Выводим результат
 print(cluster_means)
 dplyr::glimpse(cluster_means)
+#=
+#print(cluster_means, width=Inf, n=10)
 
 # Построение ящиков с усами
 # Преобразование данных из широкого формата в длинный
